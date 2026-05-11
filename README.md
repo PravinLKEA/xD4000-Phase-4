@@ -1,1 +1,1 @@
-Phase-4A XD4000 Oscilloscope build files.
+Phase-4B XD4000 Command Preparation + Oscilloscope build files.
