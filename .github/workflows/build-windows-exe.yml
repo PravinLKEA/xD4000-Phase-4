@@ -1,4 +1,4 @@
-name: Build XD4000 Phase4A Windows EXE
+name: Build XD4000 Phase4B Windows EXE
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
           dir data
           if not exist requirements.txt exit /b 1
           if not exist app\main.py exit /b 1
-          if not exist data\xd4000_phase4a_parameters.csv exit /b 1
+          if not exist data\xd4000_phase4b_parameters.csv exit /b 1
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -42,13 +42,13 @@ jobs:
         shell: cmd
         run: |
           python -m PyInstaller --noconfirm --clean --onefile --windowed ^
-            --name LK_XD4000_Phase4A_Oscilloscope_Tester ^
+            --name LK_XD4000_Phase4B_Command_Preparation_Tester ^
             --add-data "data;data" ^
             app\main.py
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LK_XD4000_Phase4A_Oscilloscope_Tester-Windows-EXE
-          path: dist/LK_XD4000_Phase4A_Oscilloscope_Tester.exe
+          name: LK_XD4000_Phase4B_Command_Preparation_Tester-Windows-EXE
+          path: dist/LK_XD4000_Phase4B_Command_Preparation_Tester.exe
           if-no-files-found: error
           retention-days: 30
