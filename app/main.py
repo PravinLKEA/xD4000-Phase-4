@@ -102,35 +102,20 @@ class ModbusGateway:
         self.write_register(p.address,raw & 0xFFFF)
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__(); self.setWindowTitle('LK XD4000 Phase-4A Oscilloscope + Ethernet Diagnostics'); self.resize(1460,880)
-        self.db=ParameterDB(); self.gateway=ModbusGateway(); self.params=[]
+        super().__init__(); self.setWindowTitle('LK XD4000 Phase-4B Command Preparation Tester'); self.resize(1480,900)
+        self.db=ParameterDB(); self.gateway=ModbusGateway(); self.params=[]; self.last_eligibility=False
         self.keepalive_timer=QTimer(self); self.keepalive_timer.timeout.connect(self.keepalive_tick)
         self.scope_timer=QTimer(self); self.scope_timer.timeout.connect(self.scope_tick)
         self.scope_start=None; self.scope_data={}; self.scope_checks={}
         self.build_ui(); self.apply_lk_theme(); self.load_db()
     def apply_lk_theme(self):
-        self.setStyleSheet(f"""
-        QMainWindow {{ background:{BG}; font-family:Roboto, Segoe UI, sans-serif; color:{TEXT}; }}
-        QGroupBox {{ background:{CARD}; border:1px solid #C1C1C1; border-radius:10px; margin-top:12px; padding:10px; font-weight:bold; color:{TEXT}; }}
-        QGroupBox::title {{ subcontrol-origin:margin; left:12px; padding:0 4px; }}
-        QLabel {{ color:{TEXT}; font-size:12px; }}
-        QLineEdit,QSpinBox,QComboBox {{ background:#FFFFFF; border:1px solid #C1C1C1; border-radius:6px; padding:5px; min-height:24px; }}
-        QPushButton {{ background:{BRAND_BLUE}; color:white; border:none; border-radius:8px; min-height:35px; padding:6px 12px; font-weight:bold; }}
-        QPushButton:hover {{ background:{BRAND_BLUE_DARK}; }}
-        QPushButton:disabled {{ background:#C1C1C1; color:#7E7E7E; }}
-        QTabWidget::pane {{ border:1px solid #C1C1C1; background:{CARD}; border-radius:8px; }}
-        QTabBar::tab {{ background:#EFEFEF; color:{TEXT2}; padding:8px 18px; border-top-left-radius:8px; border-top-right-radius:8px; min-height:24px; }}
-        QTabBar::tab:selected {{ background:{CARD}; color:{BRAND_BLUE_DARK}; border-bottom:3px solid {BRAND_BLUE}; font-weight:bold; }}
-        QTableWidget {{ background:{CARD}; gridline-color:#EFEFEF; selection-background-color:#E6F6FC; selection-color:{TEXT}; }}
-        QHeaderView::section {{ background:#EFEFEF; color:{TEXT}; padding:6px; border:0px; font-weight:bold; }}
-        QTextEdit {{ background:#FFFFFF; border:1px solid #C1C1C1; border-radius:8px; padding:6px; }}
-        """)
+        self.setStyleSheet(f"""QMainWindow {{background:{BG}; font-family:Roboto, Segoe UI, sans-serif; color:{TEXT};}} QGroupBox {{background:{CARD}; border:1px solid #C1C1C1; border-radius:10px; margin-top:12px; padding:10px; font-weight:bold; color:{TEXT};}} QLabel {{color:{TEXT}; font-size:12px;}} QLineEdit,QSpinBox,QComboBox {{background:#FFF; border:1px solid #C1C1C1; border-radius:6px; padding:5px; min-height:24px;}} QPushButton {{background:{BRAND_BLUE}; color:white; border:none; border-radius:8px; min-height:35px; padding:6px 12px; font-weight:bold;}} QPushButton:hover {{background:{BRAND_BLUE_DARK};}} QPushButton:disabled {{background:#C1C1C1; color:#7E7E7E;}} QTabWidget::pane {{border:1px solid #C1C1C1; background:{CARD}; border-radius:8px;}} QTabBar::tab {{background:#EFEFEF; color:{TEXT2}; padding:8px 18px; min-height:24px;}} QTabBar::tab:selected {{background:{CARD}; color:{BRAND_BLUE_DARK}; border-bottom:3px solid {BRAND_BLUE}; font-weight:bold;}} QTableWidget {{background:{CARD}; gridline-color:#EFEFEF; selection-background-color:#E6F6FC;}} QHeaderView::section {{background:#EFEFEF; color:{TEXT}; padding:6px; border:0px; font-weight:bold;}} QTextEdit {{background:#FFF; border:1px solid #C1C1C1; border-radius:8px; padding:6px;}}""")
     def log(self,m): self.logbox.append(f'[{time.strftime("%H:%M:%S")}] {m}')
     def load_db(self):
-        self.db.load_csv(resource_path(os.path.join('data','xd4000_phase4a_parameters.csv'))); self.refresh_params(); self.build_scope_signal_list(); self.log(f'Loaded XD4000 Phase-4A database: {len(self.db.params)} parameters')
+        self.db.load_csv(resource_path(os.path.join('data','xd4000_phase4b_parameters.csv'))); self.refresh_params(); self.build_scope_signal_list(); self.log(f'Loaded XD4000 Phase-4B database: {len(self.db.params)} parameters')
     def build_ui(self):
         c=QWidget(); self.setCentralWidget(c); root=QVBoxLayout(c)
-        appbar=QGroupBox('Lauritz Knudsen  |  XD4000 Phase-4A Oscilloscope + Ethernet Diagnostics'); appbar_layout=QHBoxLayout(appbar)
+        appbar=QGroupBox('Lauritz Knudsen  |  XD4000 Phase-4B Command Preparation + Oscilloscope'); appbar_layout=QHBoxLayout(appbar)
         self.connection_status=QLabel('Offline'); self.connection_status.setStyleSheet(f'color:{BRAND_BLUE_DEEP}; font-weight:bold;')
         appbar_layout.addWidget(QLabel('Drive Manager')); appbar_layout.addStretch(); appbar_layout.addWidget(self.connection_status); root.addWidget(appbar)
         box=QGroupBox('XD4000 / ATV930 - Modbus TCP'); g=QGridLayout(box)
@@ -140,29 +125,37 @@ class MainWindow(QMainWindow):
         for i,(txt,fn) in enumerate([('Connect',self.connect_drive),('Disconnect',self.disconnect_drive),('Upload visible',self.upload_visible),('Download selected row',self.download_selected),('Download modified RW',self.download_modified),('Export Event Log',self.export_log)]):
             b=QPushButton(txt); b.clicked.connect(fn); g.addWidget(b,2,i)
         root.addWidget(box); self.tabs=QTabWidget(); root.addWidget(self.tabs,1); self.table=QTableWidget(); self.tabs.addTab(self.table,'Parameters')
-        self.build_ethernet_tab(); self.build_scope_tab(); self.logbox=QTextEdit(); self.logbox.setReadOnly(True); self.tabs.addTab(self.logbox,'Event Log')
+        self.build_ethernet_tab(); self.build_command_tab(); self.build_scope_tab(); self.logbox=QTextEdit(); self.logbox.setReadOnly(True); self.tabs.addTab(self.logbox,'Event Log')
     def build_ethernet_tab(self):
         diag=QWidget(); dl=QVBoxLayout(diag); self.expert=QCheckBox('Expert test mode: bench setup confirmed, output terminals safe'); dl.addWidget(self.expert)
         self.keepalive=QCheckBox('Maintain Ethernet keep-alive polling every 1 second'); self.keepalive.stateChanged.connect(self.toggle_keepalive); dl.addWidget(self.keepalive)
-        dl.addWidget(QLabel('CMD@8501 raw writes are locked. Phase-4A retains Phase-3A Ethernet supervision and command/reference source diagnostics.'))
+        dl.addWidget(QLabel('CMD@8501 raw writes are locked. Phase-4B retains Ethernet supervision diagnostics.'))
         row=QHBoxLayout()
         for txt,fn in [('Diagnose Ethernet Supervision',self.diagnose_ethernet),('Diagnose CRC/CCC Channels',self.diagnose_channels),('Command/Reference Config',self.diagnose_config),('Set LFR to 0.0 Hz',self.set_lfr_zero),('Command Test Checklist',self.prepare_checklist)]:
             b=QPushButton(txt); b.clicked.connect(fn); row.addWidget(b)
         dl.addLayout(row); self.diagbox=QTextEdit(); self.diagbox.setReadOnly(True); dl.addWidget(self.diagbox); self.tabs.addTab(diag,'Ethernet Supervision')
+    def build_command_tab(self):
+        tab=QWidget(); root=QVBoxLayout(tab); panel=QGroupBox('Command Control - Safe Test Mode'); gl=QGridLayout(panel)
+        self.cmd_status=QTextEdit(); self.cmd_status.setReadOnly(True)
+        buttons=[('Read Drive State',self.cmd_read_state),('Check Command Eligibility',self.cmd_check_eligibility),('Prepare Stop Command',self.cmd_prepare_stop),('Prepare Start Forward Command',self.cmd_prepare_start),('Prepare Fault Reset Command',self.cmd_prepare_fault_reset)]
+        for i,(txt,fn) in enumerate(buttons):
+            b=QPushButton(txt); b.clicked.connect(fn); gl.addWidget(b,0,i)
+            if 'Start' in txt or 'Stop' in txt or 'Fault' in txt: b.setEnabled(True)
+        root.addWidget(panel); root.addWidget(QLabel('Phase-4B does not write CMD@8501. It validates readiness and blocks command execution until Phase-4C.'))
+        root.addWidget(self.cmd_status,1); self.tabs.addTab(tab,'Command Preparation')
     def build_scope_tab(self):
         tab=QWidget(); root=QVBoxLayout(tab); controls=QGroupBox('Oscilloscope / Trend Controls'); cl=QGridLayout(controls)
         self.scope_interval=QComboBox(); self.scope_interval.addItems(['250','500','1000']); self.scope_interval.setCurrentText('500')
         self.scope_window=QComboBox(); self.scope_window.addItems(['30','60','120']); self.scope_window.setCurrentText('60')
-        buttons=[('Start capture',self.start_scope),('Stop capture',self.stop_scope),('Clear trace',self.clear_scope),('Export trend CSV',self.export_scope_csv)]
         widgets=[self.scope_interval,self.scope_window]
-        for label,fn in buttons:
+        for label,fn in [('Start capture',self.start_scope),('Stop capture',self.stop_scope),('Clear trace',self.clear_scope),('Export trend CSV',self.export_scope_csv)]:
             b=QPushButton(label); b.clicked.connect(fn); widgets.append(b)
         for i,(lab,w) in enumerate([('Sample interval ms',widgets[0]),('Rolling window s',widgets[1]),('',widgets[2]),('',widgets[3]),('',widgets[4]),('',widgets[5])]): cl.addWidget(QLabel(lab),0,i); cl.addWidget(w,1,i)
         root.addWidget(controls); signals=QGroupBox('Signals'); self.signal_layout=QHBoxLayout(signals); root.addWidget(signals)
         if pg:
             self.plot=pg.PlotWidget(title='XD4000 Oscilloscope / Trend'); self.plot.setBackground('w'); self.plot.showGrid(x=True,y=True); self.plot.addLegend(); self.plot.setLabel('bottom','Time',units='s'); self.plot.setLabel('left','Engineering value')
         else:
-            self.plot=QTextEdit('pyqtgraph is not installed. Add pyqtgraph>=0.13 to requirements.txt'); self.plot.setReadOnly(True)
+            self.plot=QTextEdit('pyqtgraph is not installed.'); self.plot.setReadOnly(True)
         root.addWidget(self.plot,1); self.tabs.addTab(tab,'Oscilloscope / Trend')
     def build_scope_signal_list(self):
         if not hasattr(self,'signal_layout'): return
@@ -297,6 +290,37 @@ class MainWindow(QMainWindow):
     def keepalive_tick(self):
         if not self.gateway.is_connected(): self.keepalive.setChecked(False); return
         self.read_codes(['ETA','RFR','FRH','CRC','CCC','COM1','LFR'],update_offline=False); self.log('Keep-alive poll OK')
+    def cmd_read_state(self):
+        if not self.gateway.is_connected(): QMessageBox.warning(self,'Not connected','Connect first'); return
+        lines,vals=self.read_codes(['ETA','HMIS','CRC','CCC','RFR','FRH','LFR','CHCF','FR1','CD1','CD2'],update_offline=False)
+        if 'CRC' in vals: lines.append(f'CRC decode: {self.bit_text(vals["CRC"])}')
+        if 'CCC' in vals: lines.append(f'CCC decode: {self.bit_text(vals["CCC"])}')
+        self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] DRIVE STATE\n'+'\n'.join(lines)+'\n')
+        self.log('Command drive state read completed')
+    def cmd_check_eligibility(self):
+        if not self.gateway.is_connected(): QMessageBox.warning(self,'Not connected','Connect first'); return
+        lines,vals=self.read_codes(['ETA','HMIS','CRC','CCC','RFR','FRH','LFR','CHCF','FR1','CD1','CD2'],update_offline=False)
+        checks=[]
+        expert=self.expert.isChecked(); checks.append(('Expert mode checked',expert))
+        crc_ok='CRC' in vals and (int(vals['CRC'])&(1<<11)); checks.append(('Reference channel Embedded Ethernet / Modbus TCP',crc_ok))
+        ccc_ok='CCC' in vals and (int(vals['CCC'])&(1<<11)); checks.append(('Command channel Embedded Ethernet / Modbus TCP',ccc_ok))
+        rfr_ok='RFR' in vals and abs(float(vals['RFR']))<=0.2; checks.append(('RFR near zero',rfr_ok))
+        lfr_ok='LFR' in vals and abs(float(vals['LFR']))<=10.0; checks.append(('LFR safe value <= 10 Hz',lfr_ok))
+        read_ok=all(k in vals for k in ['ETA','HMIS','CRC','CCC','RFR','LFR']); checks.append(('Required status values readable',read_ok))
+        self.last_eligibility=all(v for _,v in checks)
+        status=['PASS: '+n if v else 'BLOCK: '+n for n,v in checks]
+        status.append('COMMAND EXECUTION ELIGIBILITY: '+('READY FOR PHASE-4C VALIDATION' if self.last_eligibility else 'NOT READY - command writes remain blocked'))
+        self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] COMMAND ELIGIBILITY\n'+'\n'.join(lines+status)+'\n')
+        self.log('Command eligibility checked')
+    def cmd_prepare_stop(self): self._prepare_command('STOP')
+    def cmd_prepare_start(self): self._prepare_command('START FORWARD')
+    def cmd_prepare_fault_reset(self): self._prepare_command('FAULT RESET')
+    def _prepare_command(self,name):
+        self.cmd_check_eligibility()
+        msg=f'{name} command preparation complete. Phase-4B does not write CMD@8501. '
+        msg += 'Eligibility passed; command can be implemented in Phase-4C.' if self.last_eligibility else 'Eligibility blocked; do not proceed to command write.'
+        self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] {msg}\n')
+        self.log(msg)
     def start_scope(self):
         if pg is None: QMessageBox.warning(self,'Missing dependency','pyqtgraph is not installed.'); return
         if not self.gateway.is_connected(): QMessageBox.warning(self,'Not connected','Connect first'); return
@@ -335,6 +359,8 @@ class MainWindow(QMainWindow):
         self.log(f'Oscilloscope data exported: {path}')
     def export_log(self):
         path,_=QFileDialog.getSaveFileName(self,'Export event log','xd4000_event_log.txt','Text Files (*.txt)')
-        if path: open(path,'w',encoding='utf-8').write(self.logbox.toPlainText()+'\n\n--- DIAGNOSTIC OUTPUT ---\n'+self.diagbox.toPlainText()); self.log(f'Event log exported: {path}')
+        if path:
+            extra='\n\n--- ETHERNET DIAGNOSTIC OUTPUT ---\n'+self.diagbox.toPlainText()+'\n\n--- COMMAND PREPARATION OUTPUT ---\n'+self.cmd_status.toPlainText()
+            open(path,'w',encoding='utf-8').write(self.logbox.toPlainText()+extra); self.log(f'Event log exported: {path}')
 if __name__=='__main__':
     app=QApplication(sys.argv); w=MainWindow(); w.show(); sys.exit(app.exec())
