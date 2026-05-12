@@ -1,4 +1,4 @@
-name: Build XD4000 Phase4C Windows EXE
+name: Build XD4000 Phase5 Windows EXE
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
           dir data
           if not exist requirements.txt exit /b 1
           if not exist app\main.py exit /b 1
-          if not exist data\xd4000_phase4c_parameters.csv exit /b 1
+          if not exist data\xd4000_phase5_parameters.csv exit /b 1
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -34,6 +34,7 @@ jobs:
           python -m pip show pymodbus
           python -m pip show PyInstaller
           python -m pip show pyqtgraph
+          python -m pip show openpyxl
       - name: Check Python syntax
         shell: cmd
         run: |
@@ -42,13 +43,13 @@ jobs:
         shell: cmd
         run: |
           python -m PyInstaller --noconfirm --clean --onefile --windowed ^
-            --name LK_XD4000_Phase4C_Controlled_Command_Tester ^
+            --name LK_XD4000_Phase5_Full_Parameter_Manager_DryRun ^
             --add-data "data;data" ^
             app\main.py
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LK_XD4000_Phase4C_Controlled_Command_Tester-Windows-EXE
-          path: dist/LK_XD4000_Phase4C_Controlled_Command_Tester.exe
+          name: LK_XD4000_Phase5_Full_Parameter_Manager_DryRun-Windows-EXE
+          path: dist/LK_XD4000_Phase5_Full_Parameter_Manager_DryRun.exe
           if-no-files-found: error
           retention-days: 30
