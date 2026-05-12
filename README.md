@@ -1,1 +1,1 @@
-Phase-4B XD4000 Command Preparation + Oscilloscope build files.
+Phase-4C controlled command framework. CMD constants intentionally blank until verified.
