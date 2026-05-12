@@ -3,15 +3,21 @@ import csv, os, sys, time
 from dataclasses import dataclass
 from typing import Optional
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QMessageBox, QSpinBox, QTextEdit, QGroupBox, QCheckBox, QFileDialog, QTabWidget, QComboBox
+from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QLineEdit,QPushButton,QTableWidget,QTableWidgetItem,QMessageBox,QSpinBox,QTextEdit,QGroupBox,QCheckBox,QFileDialog,QTabWidget,QComboBox
 try:
     import pyqtgraph as pg
 except Exception:
-    pg = None
+    pg=None
 try:
     from pymodbus.client import ModbusTcpClient
 except Exception:
-    ModbusTcpClient = None
+    ModbusTcpClient=None
+
+# Phase-4C safety note:
+# CMD command words are intentionally NOT populated here. Fill these only after official drive manual verification and bench sign-off.
+CMD_VALUES = {'START_FORWARD': None, 'STOP': None, 'FAULT_RESET': None}
+CMD_ADDRESS = 8501
+
 BRAND_BLUE='#008CD7'; BRAND_BLUE_DARK='#005C8E'; BRAND_BLUE_DEEP='#004265'; BG='#EFEFEF'; CARD='#FFFFFF'; TEXT='#3C3C3C'; TEXT2='#7E7E7E'
 DATA_COLORS=['#0766F6','#DC272D','#00943D','#FFDD49','#8886FB','#F2AC59','#585B5B']
 def resource_path(p): return os.path.join(getattr(sys,'_MEIPASS',os.path.abspath(os.path.join(os.path.dirname(__file__),'..'))),p)
@@ -102,7 +108,7 @@ class ModbusGateway:
         self.write_register(p.address,raw & 0xFFFF)
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__(); self.setWindowTitle('LK XD4000 Phase-4B Command Preparation Tester'); self.resize(1480,900)
+        super().__init__(); self.setWindowTitle('LK XD4000 Phase-4C Controlled Command Tester'); self.resize(1500,920)
         self.db=ParameterDB(); self.gateway=ModbusGateway(); self.params=[]; self.last_eligibility=False
         self.keepalive_timer=QTimer(self); self.keepalive_timer.timeout.connect(self.keepalive_tick)
         self.scope_timer=QTimer(self); self.scope_timer.timeout.connect(self.scope_tick)
@@ -112,10 +118,10 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(f"""QMainWindow {{background:{BG}; font-family:Roboto, Segoe UI, sans-serif; color:{TEXT};}} QGroupBox {{background:{CARD}; border:1px solid #C1C1C1; border-radius:10px; margin-top:12px; padding:10px; font-weight:bold; color:{TEXT};}} QLabel {{color:{TEXT}; font-size:12px;}} QLineEdit,QSpinBox,QComboBox {{background:#FFF; border:1px solid #C1C1C1; border-radius:6px; padding:5px; min-height:24px;}} QPushButton {{background:{BRAND_BLUE}; color:white; border:none; border-radius:8px; min-height:35px; padding:6px 12px; font-weight:bold;}} QPushButton:hover {{background:{BRAND_BLUE_DARK};}} QPushButton:disabled {{background:#C1C1C1; color:#7E7E7E;}} QTabWidget::pane {{border:1px solid #C1C1C1; background:{CARD}; border-radius:8px;}} QTabBar::tab {{background:#EFEFEF; color:{TEXT2}; padding:8px 18px; min-height:24px;}} QTabBar::tab:selected {{background:{CARD}; color:{BRAND_BLUE_DARK}; border-bottom:3px solid {BRAND_BLUE}; font-weight:bold;}} QTableWidget {{background:{CARD}; gridline-color:#EFEFEF; selection-background-color:#E6F6FC;}} QHeaderView::section {{background:#EFEFEF; color:{TEXT}; padding:6px; border:0px; font-weight:bold;}} QTextEdit {{background:#FFF; border:1px solid #C1C1C1; border-radius:8px; padding:6px;}}""")
     def log(self,m): self.logbox.append(f'[{time.strftime("%H:%M:%S")}] {m}')
     def load_db(self):
-        self.db.load_csv(resource_path(os.path.join('data','xd4000_phase4b_parameters.csv'))); self.refresh_params(); self.build_scope_signal_list(); self.log(f'Loaded XD4000 Phase-4B database: {len(self.db.params)} parameters')
+        self.db.load_csv(resource_path(os.path.join('data','xd4000_phase4c_parameters.csv'))); self.refresh_params(); self.build_scope_signal_list(); self.log(f'Loaded XD4000 Phase-4C database: {len(self.db.params)} parameters')
     def build_ui(self):
         c=QWidget(); self.setCentralWidget(c); root=QVBoxLayout(c)
-        appbar=QGroupBox('Lauritz Knudsen  |  XD4000 Phase-4B Command Preparation + Oscilloscope'); appbar_layout=QHBoxLayout(appbar)
+        appbar=QGroupBox('Lauritz Knudsen  |  XD4000 Phase-4C Controlled Command Tester'); appbar_layout=QHBoxLayout(appbar)
         self.connection_status=QLabel('Offline'); self.connection_status.setStyleSheet(f'color:{BRAND_BLUE_DEEP}; font-weight:bold;')
         appbar_layout.addWidget(QLabel('Drive Manager')); appbar_layout.addStretch(); appbar_layout.addWidget(self.connection_status); root.addWidget(appbar)
         box=QGroupBox('XD4000 / ATV930 - Modbus TCP'); g=QGridLayout(box)
@@ -129,20 +135,18 @@ class MainWindow(QMainWindow):
     def build_ethernet_tab(self):
         diag=QWidget(); dl=QVBoxLayout(diag); self.expert=QCheckBox('Expert test mode: bench setup confirmed, output terminals safe'); dl.addWidget(self.expert)
         self.keepalive=QCheckBox('Maintain Ethernet keep-alive polling every 1 second'); self.keepalive.stateChanged.connect(self.toggle_keepalive); dl.addWidget(self.keepalive)
-        dl.addWidget(QLabel('CMD@8501 raw writes are locked. Phase-4B retains Ethernet supervision diagnostics.'))
         row=QHBoxLayout()
         for txt,fn in [('Diagnose Ethernet Supervision',self.diagnose_ethernet),('Diagnose CRC/CCC Channels',self.diagnose_channels),('Command/Reference Config',self.diagnose_config),('Set LFR to 0.0 Hz',self.set_lfr_zero),('Command Test Checklist',self.prepare_checklist)]:
             b=QPushButton(txt); b.clicked.connect(fn); row.addWidget(b)
         dl.addLayout(row); self.diagbox=QTextEdit(); self.diagbox.setReadOnly(True); dl.addWidget(self.diagbox); self.tabs.addTab(diag,'Ethernet Supervision')
     def build_command_tab(self):
-        tab=QWidget(); root=QVBoxLayout(tab); panel=QGroupBox('Command Control - Safe Test Mode'); gl=QGridLayout(panel)
+        tab=QWidget(); root=QVBoxLayout(tab); panel=QGroupBox('Command Control - Controlled State Machine'); gl=QGridLayout(panel)
         self.cmd_status=QTextEdit(); self.cmd_status.setReadOnly(True)
-        buttons=[('Read Drive State',self.cmd_read_state),('Check Command Eligibility',self.cmd_check_eligibility),('Prepare Stop Command',self.cmd_prepare_stop),('Prepare Start Forward Command',self.cmd_prepare_start),('Prepare Fault Reset Command',self.cmd_prepare_fault_reset)]
-        for i,(txt,fn) in enumerate(buttons):
+        commands=[('Read Drive State',self.cmd_read_state),('Check Command Eligibility',self.cmd_check_eligibility),('START FORWARD',self.cmd_start_forward),('STOP',self.cmd_stop),('FAULT RESET',self.cmd_fault_reset)]
+        for i,(txt,fn) in enumerate(commands):
             b=QPushButton(txt); b.clicked.connect(fn); gl.addWidget(b,0,i)
-            if 'Start' in txt or 'Stop' in txt or 'Fault' in txt: b.setEnabled(True)
-        root.addWidget(panel); root.addWidget(QLabel('Phase-4B does not write CMD@8501. It validates readiness and blocks command execution until Phase-4C.'))
-        root.addWidget(self.cmd_status,1); self.tabs.addTab(tab,'Command Preparation')
+        root.addWidget(panel); root.addWidget(QLabel('Phase-4C contains controlled CMD execution framework. Command words are blank by default and execution remains blocked until verified constants are configured.'))
+        root.addWidget(self.cmd_status,1); self.tabs.addTab(tab,'Command Control')
     def build_scope_tab(self):
         tab=QWidget(); root=QVBoxLayout(tab); controls=QGroupBox('Oscilloscope / Trend Controls'); cl=QGridLayout(controls)
         self.scope_interval=QComboBox(); self.scope_interval.addItems(['250','500','1000']); self.scope_interval.setCurrentText('500')
@@ -204,7 +208,7 @@ class MainWindow(QMainWindow):
         self.populate(); self.log(f'Upload complete. OK={ok}, Failed={fail}')
     def write_rb(self,p):
         if p.write_protect and not self.expert.isChecked(): raise RuntimeError(f'{p.code} is write-protected. Expert mode required.')
-        if p.code.upper()=='CMD': raise RuntimeError('CMD raw command writes are disabled in this safety build.')
+        if p.code.upper()=='CMD': raise RuntimeError('CMD raw command writes are disabled outside controlled command state machine.')
         ka=self.keepalive_timer.isActive(); sc=self.scope_timer.isActive()
         if ka: self.keepalive_timer.stop(); self.log('Keep-alive temporarily paused for parameter write')
         if sc: self.scope_timer.stop(); self.log('Oscilloscope capture temporarily paused for parameter write')
@@ -276,7 +280,7 @@ class MainWindow(QMainWindow):
         lines,vals=self.read_codes(['CHCF','FR1','CD1','CD2','CRC','CCC','CNFS']); lines.append('Note: FR1/CD1/CD2/CHCF are read-only diagnostics in this build. Do not change channel configuration until values are reviewed.')
         self.add_diag('COMMAND / REFERENCE CONFIGURATION',lines); self.log('Command/reference configuration diagnosis completed'); self.refresh_params()
     def prepare_checklist(self):
-        msg='Command test preparation only - no run command is written in this build.\n1. Confirm bench setup and output terminals are safe.\n2. Confirm ETA, HMIS, RFR read correctly.\n3. Confirm active command/reference channels using CCC and CRC.\n4. Confirm Ethernet supervision parameters ETHL, ETHF, TTOB.\n5. Keep CMD@8501 locked until command state-machine is implemented.\n'
+        msg='Command test preparation only - no run command should be attempted until command channel, reference channel, and bench safety are confirmed.\n1. Expert mode checked.\n2. CCC bit 11 active.\n3. CRC bit 11 active.\n4. RFR near zero.\n5. LFR safe value.\n6. Official CMD words verified before enabling execution.\n'
         self.diagbox.append(f'[{time.strftime("%H:%M:%S")}]\n{msg}'); self.log('Command test checklist displayed')
     def set_lfr_zero(self):
         p=self.db.by_code('LFR')
@@ -295,32 +299,46 @@ class MainWindow(QMainWindow):
         lines,vals=self.read_codes(['ETA','HMIS','CRC','CCC','RFR','FRH','LFR','CHCF','FR1','CD1','CD2'],update_offline=False)
         if 'CRC' in vals: lines.append(f'CRC decode: {self.bit_text(vals["CRC"])}')
         if 'CCC' in vals: lines.append(f'CCC decode: {self.bit_text(vals["CCC"])}')
-        self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] DRIVE STATE\n'+'\n'.join(lines)+'\n')
-        self.log('Command drive state read completed')
+        self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] DRIVE STATE\n'+'\n'.join(lines)+'\n'); self.log('Command drive state read completed')
     def cmd_check_eligibility(self):
-        if not self.gateway.is_connected(): QMessageBox.warning(self,'Not connected','Connect first'); return
+        if not self.gateway.is_connected(): QMessageBox.warning(self,'Not connected','Connect first'); return False
         lines,vals=self.read_codes(['ETA','HMIS','CRC','CCC','RFR','FRH','LFR','CHCF','FR1','CD1','CD2'],update_offline=False)
-        checks=[]
-        expert=self.expert.isChecked(); checks.append(('Expert mode checked',expert))
-        crc_ok='CRC' in vals and (int(vals['CRC'])&(1<<11)); checks.append(('Reference channel Embedded Ethernet / Modbus TCP',crc_ok))
-        ccc_ok='CCC' in vals and (int(vals['CCC'])&(1<<11)); checks.append(('Command channel Embedded Ethernet / Modbus TCP',ccc_ok))
-        rfr_ok='RFR' in vals and abs(float(vals['RFR']))<=0.2; checks.append(('RFR near zero',rfr_ok))
-        lfr_ok='LFR' in vals and abs(float(vals['LFR']))<=10.0; checks.append(('LFR safe value <= 10 Hz',lfr_ok))
-        read_ok=all(k in vals for k in ['ETA','HMIS','CRC','CCC','RFR','LFR']); checks.append(('Required status values readable',read_ok))
+        checks=[]; checks.append(('Expert mode checked',self.expert.isChecked()))
+        checks.append(('Keep-alive active',self.keepalive_timer.isActive()))
+        checks.append(('Reference channel Embedded Ethernet / Modbus TCP','CRC' in vals and (int(vals['CRC'])&(1<<11))))
+        checks.append(('Command channel Embedded Ethernet / Modbus TCP','CCC' in vals and (int(vals['CCC'])&(1<<11))))
+        checks.append(('RFR near zero','RFR' in vals and abs(float(vals['RFR']))<=0.2))
+        checks.append(('LFR safe value <= 10 Hz','LFR' in vals and abs(float(vals['LFR']))<=10.0))
+        checks.append(('Required status values readable',all(k in vals for k in ['ETA','HMIS','CRC','CCC','RFR','LFR'])))
         self.last_eligibility=all(v for _,v in checks)
         status=['PASS: '+n if v else 'BLOCK: '+n for n,v in checks]
-        status.append('COMMAND EXECUTION ELIGIBILITY: '+('READY FOR PHASE-4C VALIDATION' if self.last_eligibility else 'NOT READY - command writes remain blocked'))
+        status.append('COMMAND EXECUTION ELIGIBILITY: '+('READY, pending verified CMD constants' if self.last_eligibility else 'NOT READY - command writes blocked'))
         self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] COMMAND ELIGIBILITY\n'+'\n'.join(lines+status)+'\n')
         self.log('Command eligibility checked')
-    def cmd_prepare_stop(self): self._prepare_command('STOP')
-    def cmd_prepare_start(self): self._prepare_command('START FORWARD')
-    def cmd_prepare_fault_reset(self): self._prepare_command('FAULT RESET')
-    def _prepare_command(self,name):
-        self.cmd_check_eligibility()
-        msg=f'{name} command preparation complete. Phase-4B does not write CMD@8501. '
-        msg += 'Eligibility passed; command can be implemented in Phase-4C.' if self.last_eligibility else 'Eligibility blocked; do not proceed to command write.'
-        self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] {msg}\n')
-        self.log(msg)
+        return self.last_eligibility
+    def cmd_start_forward(self): self.execute_command('START_FORWARD')
+    def cmd_stop(self): self.execute_command('STOP')
+    def cmd_fault_reset(self): self.execute_command('FAULT_RESET')
+    def execute_command(self,cmd_name):
+        if not self.cmd_check_eligibility():
+            self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] {cmd_name} blocked by eligibility checks.\n'); return
+        value=CMD_VALUES.get(cmd_name)
+        if value is None:
+            msg=f'{cmd_name} blocked: CMD value is not configured in this build. Populate CMD_VALUES only after official manual verification and bench approval.'
+            self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] {msg}\n'); self.log(msg); return
+        if QMessageBox.question(self,'Confirm controlled command',f'Write {cmd_name} command value to CMD@8501? Bench setup must be safe.')!=QMessageBox.Yes:
+            self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] {cmd_name} cancelled by user.\n'); return
+        try:
+            ka=self.keepalive_timer.isActive()
+            if ka: self.keepalive_timer.stop(); self.log('Keep-alive temporarily paused for command write')
+            self.gateway.write_register(CMD_ADDRESS,int(value)&0xFFFF)
+            self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] {cmd_name} command write attempted to CMD@8501.\n')
+            lines,vals=self.read_codes(['ETA','HMIS','RFR','FRH','LFR'],update_offline=False)
+            self.cmd_status.append('\n'.join(lines)+'\n')
+        except Exception as e:
+            self.cmd_status.append(f'[{time.strftime("%H:%M:%S")}] {cmd_name} command failed: {e}\n'); self.log(f'{cmd_name} command failed: {e}')
+        finally:
+            if self.keepalive.isChecked(): self.keepalive_timer.start(1000); self.log('Keep-alive resumed after command write')
     def start_scope(self):
         if pg is None: QMessageBox.warning(self,'Missing dependency','pyqtgraph is not installed.'); return
         if not self.gateway.is_connected(): QMessageBox.warning(self,'Not connected','Connect first'); return
@@ -360,7 +378,7 @@ class MainWindow(QMainWindow):
     def export_log(self):
         path,_=QFileDialog.getSaveFileName(self,'Export event log','xd4000_event_log.txt','Text Files (*.txt)')
         if path:
-            extra='\n\n--- ETHERNET DIAGNOSTIC OUTPUT ---\n'+self.diagbox.toPlainText()+'\n\n--- COMMAND PREPARATION OUTPUT ---\n'+self.cmd_status.toPlainText()
+            extra='\n\n--- ETHERNET DIAGNOSTIC OUTPUT ---\n'+self.diagbox.toPlainText()+'\n\n--- COMMAND CONTROL OUTPUT ---\n'+self.cmd_status.toPlainText()
             open(path,'w',encoding='utf-8').write(self.logbox.toPlainText()+extra); self.log(f'Event log exported: {path}')
 if __name__=='__main__':
     app=QApplication(sys.argv); w=MainWindow(); w.show(); sys.exit(app.exec())
