@@ -1,1 +1,1 @@
-Phase-5A/5B XD4000 Parameter Manager with project Excel and command dry-run.
+Phase-5C XD4000 full parameter integration framework. Import official full list through Excel/CSV.
